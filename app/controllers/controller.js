@@ -1,12 +1,36 @@
 var request = require('request');
 var querystring = require('querystring');
+var crypto = require('crypto');
 
-module.exports.main_page = function (app, req, res) {
-  res.render('main_page', {url: 'https://ingaiatest.herokuapp.com'});
+function revalidateSpotify (callback) {
+  var client_id = process.env.SPOTIFY_CLIENT_ID;
+  var client_secret = process.env.SPOTIFY_CLIENT_SECRET;
+
+  // requesting access token from refresh token
+  var refresh_token = req.query.refresh_token;
+  var authOptions = {
+    url: 'https://accounts.spotify.com/api/token',
+    headers: { 'Authorization': 'Basic ' + (new Buffer(client_id + ':' + client_secret).toString('base64')) },
+    form: {
+      grant_type: 'refresh_token',
+      refresh_token: refresh_token
+    },
+    json: true
+  };
+
+  request.post(authOptions, function(error, response, body) {
+    if (!error && response.statusCode === 200) {
+      app.spotifyToken = {
+        access_token : body.access_token,
+        refresh_token : body.refresh_token
+      };
+    }
+    callback();
+  });
 }
 
-//função que busca as recomedações baseado na temperatura da cidade
-module.exports.recommendSongs = function (app, req, res) {
+//faz a requisição aos serviços do spotify e open weather map
+function requestServices (app, req, res) {
   //verificação da api do spotify
   if (app.spotifyToken === undefined) {
     res.status(500).json({error: 'Spotify not validated.'});
@@ -95,11 +119,23 @@ module.exports.recommendSongs = function (app, req, res) {
           res.json(result);
         }
         else {
-          res.status(500).json({'error': 'Internal server error.'});
+          console.log(body);
+          revalidateSpotify(function() {
+            requestServices(app, req, res);
+          });
         }
       });
     } else {
       res.status(body.cod).json({'error': body.message});
     }
   });
+}
+
+module.exports.main_page = function (app, req, res) {
+  res.render('main_page', {url: 'https://ingaiatest.herokuapp.com'});
+}
+
+//função que busca as recomedações baseado na temperatura da cidade
+module.exports.recommendSongs = function (app, req, res) {
+  requestServices(app, req, res);
 }
