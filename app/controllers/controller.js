@@ -2,35 +2,39 @@ var request = require('request');
 var querystring = require('querystring');
 var crypto = require('crypto');
 
-function revalidateSpotify (callback) {
+function revalidateSpotify (num_tries, callback) {
   var client_id = process.env.SPOTIFY_CLIENT_ID;
   var client_secret = process.env.SPOTIFY_CLIENT_SECRET;
 
-  // requesting access token from refresh token
-  var refresh_token = req.query.refresh_token;
-  var authOptions = {
-    url: 'https://accounts.spotify.com/api/token',
-    headers: { 'Authorization': 'Basic ' + (new Buffer(client_id + ':' + client_secret).toString('base64')) },
-    form: {
-      grant_type: 'refresh_token',
-      refresh_token: refresh_token
-    },
-    json: true
-  };
+  num_tries++;
 
-  request.post(authOptions, function(error, response, body) {
-    if (!error && response.statusCode === 200) {
-      app.spotifyToken = {
-        access_token : body.access_token,
-        refresh_token : body.refresh_token
-      };
-    }
-    callback();
-  });
+  setTimeout(function(){
+    var refresh_token = app.spotifyToken.refresh_token;
+    var authOptions = {
+      url: 'https://accounts.spotify.com/api/token',
+      headers: { 'Authorization': 'Basic ' + (new Buffer(client_id + ':' + client_secret).toString('base64')) },
+      form: {
+        grant_type: 'refresh_token',
+        refresh_token: refresh_token
+      },
+      json: true
+    };
+
+    request.post(authOptions, function(error, response, body) {
+      if (!error && response.statusCode === 200) {
+        app.spotifyToken = {
+          access_token : body.access_token,
+          refresh_token : body.refresh_token
+        };
+      }
+      callback();
+    });
+
+  }, num_tries * 3000);
 }
 
 //faz a requisição aos serviços do spotify e open weather map
-function requestServices (app, req, res) {
+function requestServices (app, req, res, num_tries = 0) {
   //verificação da api do spotify
   if (app.spotifyToken === undefined) {
     res.status(500).json({error: 'Spotify not validated.'});
@@ -120,8 +124,8 @@ function requestServices (app, req, res) {
         }
         else {
           console.log(body);
-          revalidateSpotify(function() {
-            requestServices(app, req, res);
+          revalidateSpotify(num_tries, function() {
+              requestServices(app, req, res, num_tries + 1);
           });
         }
       });
